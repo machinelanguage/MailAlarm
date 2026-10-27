@@ -48,7 +48,8 @@ UTF-8 olarak kaydedin (Türkçe karakterli anahtar kelimeler için).
                 klasör erişimini kısıtlayın)
 
 [Filter]
-  SenderAddress Sadece bu adresten gelen mailler işlenir (büyük/küçük harf duyarsız)
+  SenderAddress İsteğe bağlı gönderici filtresi. Boş veya * ise tüm gönderenler
+                izlenir; birden fazla adres virgül veya noktalı virgülle ayrılabilir.
   Keywords      Virgülle ayrılmış anahtar kelimeler; konu VEYA içerikte geçerse
                 alarm üretilir (büyük/küçük harf duyarsız)
   CheckIntervalSeconds  Kontrol aralığı (saniye, en az 10)
@@ -66,9 +67,9 @@ INI değiştirildikten sonra yeniden derleme gerekmez: ana penceredeki
   (arka plan iş parçacığında; arayüz donmaz). POP3 UIDL kimliği sayesinde
   uygulama aynı iletiyi yalnızca bir kez işler.
 - Mailler "okundu" olarak işaretlenmez (PEEK ile okunur).
-- İşlenen her mailin UID'si seen_uids.dat dosyasına yazılır; aynı mail tekrar
-  alarm üretmez. Daha önce işlenmiş bir test iletisini yeniden denemek için uygulama
-  kapalıyken seen_uids.dat dosyasını silin.
+- İşlenen her mailin UID'si ile aktif gönderici/keyword kuralı seen_uids.dat
+  dosyasına yazılır; aynı mail tekrar alarm üretmez. Filtre veya keyword değişince
+  mevcut iletiler yeni kuralla bir kez yeniden değerlendirilir.
 - Birden fazla alarm varsa sırayla gösterilir; her biri "Tamam" ile kapatılır.
 - Pencere kapatma/küçültme uygulamayı sistem tepsisine gizler. Tepsi simgesine
   çift tıklayın veya sağ tık > "Göster". Tamamen kapatmak için sağ tık > "Çık".
