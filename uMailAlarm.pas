@@ -224,14 +224,16 @@ end;
 
 function TMailCheckThread.MatchesKeyword(const AText: string): Boolean;
 var
-  KW, LowerText: string;
+  KW, NormalizedText: string;
 begin
   Result := False;
   if AText = '' then
     Exit;
-  LowerText := AnsiLowerCase(AText);
+  // AnsiLowerCase Türkçe ve diğer Unicode karakterlerde güvenilir değildir.
+  // INI UTF-8 olduğundan anahtar kelimeyi Unicode string üzerinde karşılaştır.
+  NormalizedText := LowerCase(AText);
   for KW in FConfig.Keywords do
-    if (KW <> '') and (ContainsText(AText, KW) or (Pos(AnsiLowerCase(KW), LowerText) > 0)) then
+    if (KW <> '') and (Pos(LowerCase(KW), NormalizedText) > 0) then
       Exit(True);
 end;
 
@@ -312,13 +314,15 @@ begin
       if not IMAP.SelectMailBox('INBOX') then
         raise Exception.Create('INBOX seçilemedi.');
 
-      SetLength(Search, 2);
-      Search[0].SearchKey := skUnseen;
-      Search[1].SearchKey := skFrom;
-      Search[1].Text := FConfig.SenderAddress;
+      // Unseen filtresi başka bir mail istemcisi iletiyi açtığında alarmı
+      // tamamen engelliyordu. Kalıcı UID kaydı aynı ileti için ikinci alarmı
+      // zaten önlediğinden bütün iletileri ara; yalnızca yeni UID'leri işle.
+      SetLength(Search, 1);
+      Search[0].SearchKey := skAll;
       if not IMAP.UIDSearchMailBox(Search) then
         raise Exception.Create('IMAP arama komutu başarısız oldu.');
 
+      LogMsg(Format('IMAP: %d ileti bulundu.', [Length(IMAP.MailBox.SearchResult)]));
       Msg := TIdMessage.Create(nil);
       for I := 0 to High(IMAP.MailBox.SearchResult) do
       begin
