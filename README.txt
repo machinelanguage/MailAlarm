@@ -31,7 +31,7 @@ Gmail normal şifreyle IMAP girişine izin vermez.
 2. https://myaccount.google.com/apppasswords adresine gidin.
 3. Uygulama adı olarak "MailAlarm" yazıp "Oluştur"a basın.
 4. Verilen 16 haneli şifreyi (boşluksuz) INI'deki Password alanına yazın.
-5. Gmail Ayarlar > "Yönlendirme ve POP/IMAP" bölümünde IMAP'in açık olduğunu
+5. Gmail Ayarlar > "Yönlendirme ve POP/IMAP" bölümünde POP'un açık olduğunu
    kontrol edin.
 
 4) MailAlarm.ini AYARLARI
@@ -39,10 +39,10 @@ Gmail normal şifreyle IMAP girişine izin vermez.
 Dosya exe ile aynı klasörde olmalı. Yoksa ilk açılışta örnek dosya oluşturulur.
 UTF-8 olarak kaydedin (Türkçe karakterli anahtar kelimeler için).
 
-[IMAP]
-  Server        IMAP sunucusu (Gmail: imap.gmail.com, Outlook: outlook.office365.com)
-  Port          993 (SSL/TLS) veya 143 (STARTTLS / şifresiz)
-  UseSSL        0 = şifresiz, 1 = SSL/TLS (993), 2 = STARTTLS (143)
+[POP3]
+  Server        POP3 sunucusu (Gmail: pop.gmail.com)
+  Port          995 (SSL/TLS) veya 110 (STARTTLS / şifresiz)
+  UseSSL        0 = şifresiz, 1 = SSL/TLS (995), 2 = STARTTLS (110)
   Username      Tam e-posta adresi
   Password      Şifre / Gmail uygulama şifresi (dosyada düz metin tutulur,
                 klasör erişimini kısıtlayın)
@@ -62,9 +62,9 @@ INI değiştirildikten sonra yeniden derleme gerekmez: ana penceredeki
 
 5) ÇALIŞMA MANTIĞI
 ------------------
-- Her N saniyede INBOX'taki gönderen adresi eşleşen mailler aranır
-  (arka plan iş parçacığında; arayüz donmaz). İletinin okunmuş/okunmamış olması
-  alarmı etkilemez; uygulama aynı iletiyi UID kaydıyla yalnızca bir kez işler.
+- Her N saniyede POP3 posta kutusundaki gönderen adresi eşleşen mailler aranır
+  (arka plan iş parçacığında; arayüz donmaz). POP3 UIDL kimliği sayesinde
+  uygulama aynı iletiyi yalnızca bir kez işler.
 - Mailler "okundu" olarak işaretlenmez (PEEK ile okunur).
 - İşlenen her mailin UID'si seen_uids.dat dosyasına yazılır; aynı mail tekrar
   alarm üretmez. Daha önce işlenmiş bir test iletisini yeniden denemek için uygulama
