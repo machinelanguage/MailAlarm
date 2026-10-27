@@ -62,11 +62,13 @@ INI değiştirildikten sonra yeniden derleme gerekmez: ana penceredeki
 
 5) ÇALIŞMA MANTIĞI
 ------------------
-- Her N saniyede INBOX'taki OKUNMAMIŞ ve gönderen adresi eşleşen mailler aranır
-  (arka plan iş parçacığında; arayüz donmaz).
+- Her N saniyede INBOX'taki gönderen adresi eşleşen mailler aranır
+  (arka plan iş parçacığında; arayüz donmaz). İletinin okunmuş/okunmamış olması
+  alarmı etkilemez; uygulama aynı iletiyi UID kaydıyla yalnızca bir kez işler.
 - Mailler "okundu" olarak işaretlenmez (PEEK ile okunur).
 - İşlenen her mailin UID'si seen_uids.dat dosyasına yazılır; aynı mail tekrar
-  alarm üretmez. Tüm alarmları sıfırlamak için bu dosyayı silin.
+  alarm üretmez. Daha önce işlenmiş bir test iletisini yeniden denemek için uygulama
+  kapalıyken seen_uids.dat dosyasını silin.
 - Birden fazla alarm varsa sırayla gösterilir; her biri "Tamam" ile kapatılır.
 - Pencere kapatma/küçültme uygulamayı sistem tepsisine gizler. Tepsi simgesine
   çift tıklayın veya sağ tık > "Göster". Tamamen kapatmak için sağ tık > "Çık".
