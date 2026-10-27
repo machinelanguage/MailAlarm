@@ -17,7 +17,7 @@ type
   TMailConfig = record
     Server: string;
     Port: Integer;
-    SSLMode: Integer;          // 0 = SSL yok, 1 = SSL/TLS (993), 2 = STARTTLS (143)
+    SSLMode: Integer;          // 0 = şifresiz, 1 = SSL/TLS (995), 2 = STARTTLS (110)
     Username: string;
     Password: string;
     SenderAddress: string;
@@ -118,7 +118,7 @@ implementation
 {$R *.dfm}
 
 uses
-  IdIMAP4, IdSSLOpenSSL, IdSSLOpenSSLHeaders, IdText, IdMessageParts,
+  IdPOP3, IdSSLOpenSSL, IdSSLOpenSSLHeaders, IdText, IdMessageParts,
   IdExplicitTLSClientServerBase,
   uAlarmPopup;
 
@@ -274,78 +274,82 @@ end;
 
 procedure TMailCheckThread.Execute;
 var
-  IMAP: TIdIMAP4;
+  POP3: TIdPOP3;
   SSL: TIdSSLIOHandlerSocketOpenSSL;
   Msg: TIdMessage;
-  Search: array of TIdIMAP4SearchRec;
-  I: Integer;
-  UID, BodyText: string;
+  UIDLs: TStringList;
+  I, MsgNo: Integer;
+  RawUID, UID, Line, BodyText: string;
   Info: TAlarmInfo;
 begin
   FErrorMsg := '';
   FFoundCount := 0;
   SSL := nil;
   Msg := nil;
-  IMAP := TIdIMAP4.Create(nil);
+  UIDLs := nil;
+  POP3 := TIdPOP3.Create(nil);
   try
     try
-      IMAP.Host := FConfig.Server;
-      IMAP.Username := FConfig.Username;
-      IMAP.Password := FConfig.Password;
-      IMAP.ConnectTimeout := 15000;
-      IMAP.ReadTimeout := 30000;
+      POP3.Host := FConfig.Server;
+      POP3.Username := FConfig.Username;
+      POP3.Password := FConfig.Password;
+      POP3.ConnectTimeout := 15000;
+      POP3.ReadTimeout := 30000;
 
       if FConfig.SSLMode <> 0 then
       begin
         SSL := TIdSSLIOHandlerSocketOpenSSL.Create(nil);
         SSL.SSLOptions.Mode := sslmClient;
         SSL.SSLOptions.SSLVersions := [sslvTLSv1_1, sslvTLSv1_2];
-        IMAP.IOHandler := SSL;          // UseTLS'den ÖNCE atanmalı
+        POP3.IOHandler := SSL;          // UseTLS'den ÖNCE atanmalı
         if FConfig.SSLMode = 2 then
-          IMAP.UseTLS := utUseRequireTLS
+          POP3.UseTLS := utUseRequireTLS
         else
-          IMAP.UseTLS := utUseImplicitTLS;
+          POP3.UseTLS := utUseImplicitTLS;
       end
       else
-        IMAP.UseTLS := utNoTLSSupport;
-      IMAP.Port := FConfig.Port;        // UseTLS portu değiştirebildiği için en son
+        POP3.UseTLS := utNoTLSSupport;
+      POP3.Port := FConfig.Port;        // UseTLS portu değiştirebildiği için en son
 
-      IMAP.Connect;
-      if not IMAP.SelectMailBox('INBOX') then
-        raise Exception.Create('INBOX seçilemedi.');
+      POP3.Connect;
+      UIDLs := TStringList.Create;
+      if not POP3.UIDL(UIDLs) then
+        raise Exception.Create('POP3 sunucusu UIDL komutunu desteklemiyor.');
+      LogMsg(Format('POP3: %d ileti bulundu.', [UIDLs.Count]));
 
-      // Unseen filtresi başka bir mail istemcisi iletiyi açtığında alarmı
-      // tamamen engelliyordu. Kalıcı UID kaydı aynı ileti için ikinci alarmı
-      // zaten önlediğinden bütün iletileri ara; yalnızca yeni UID'leri işle.
-      SetLength(Search, 1);
-      Search[0].SearchKey := skAll;
-      if not IMAP.UIDSearchMailBox(Search) then
-        raise Exception.Create('IMAP arama komutu başarısız oldu.');
-
-      LogMsg(Format('IMAP: %d ileti bulundu.', [Length(IMAP.MailBox.SearchResult)]));
       Msg := TIdMessage.Create(nil);
-      for I := 0 to High(IMAP.MailBox.SearchResult) do
+      for I := 0 to UIDLs.Count - 1 do
       begin
         if Terminated then
           Break;
-        UID := IntToStr(IMAP.MailBox.SearchResult[I]);
+        Line := UIDLs[I];
+        POP3.ParseUIDL(Line, MsgNo, RawUID);
+        if (MsgNo < 1) or (RawUID = '') then
+        begin
+          LogMsg('POP3 UIDL satırı çözümlenemedi: ' + UIDLs[I]);
+          Continue;
+        end;
+
+        // POP3 sıra numarası silinen maillerden sonra değişebilir; UIDL kalıcıdır.
+        UID := 'POP3:' + FConfig.Server + ':' + RawUID;
         if FSeenUIDs.IndexOf(UID) >= 0 then
           Continue;
+
         Msg.Clear;
         try
-          // Peek: mail "okundu" olarak işaretlenmez
-          if not IMAP.UIDRetrievePeek(UID, Msg) then
+          if not POP3.Retrieve(MsgNo, Msg) then
           begin
-            LogMsg('UID ' + UID + ' alınamadı, sonraki döngüde tekrar denenecek.');
+            LogMsg('POP3 ileti ' + IntToStr(MsgNo) + ' alınamadı, sonraki döngüde tekrar denenecek.');
             Continue;
           end;
         except
           on E: Exception do
           begin
-            LogMsg('UID ' + UID + ' okunurken hata: ' + E.Message);
+            LogMsg('POP3 ileti ' + IntToStr(MsgNo) + ' okunurken hata: ' + E.Message);
             Continue;
           end;
         end;
+
         FProcessedUIDs.Add(UID);
         if not SameText(Trim(Msg.From.Address), Trim(FConfig.SenderAddress)) then
           Continue;
@@ -371,13 +375,14 @@ begin
     end;
   finally
     try
-      if IMAP.Connected then
-        IMAP.Disconnect;
+      if POP3.Connected then
+        POP3.Disconnect;
     except
       // bağlantı zaten kopmuş olabilir
     end;
     Msg.Free;
-    IMAP.Free;
+    UIDLs.Free;
+    POP3.Free;
     SSL.Free;
   end;
 end;
@@ -449,10 +454,10 @@ begin
   SL := TStringList.Create;
   try
     SL.Add('; Mail Alarm yapılandırma dosyası');
-    SL.Add('; UseSSL: 0 = şifresiz, 1 = SSL/TLS (port 993), 2 = STARTTLS (port 143)');
-    SL.Add('[IMAP]');
-    SL.Add('Server=imap.gmail.com');
-    SL.Add('Port=993');
+    SL.Add('; UseSSL: 0 = şifresiz, 1 = SSL/TLS (port 995), 2 = STARTTLS (port 110)');
+    SL.Add('[POP3]');
+    SL.Add('Server=pop.gmail.com');
+    SL.Add('Port=995');
     SL.Add('UseSSL=1');
     SL.Add('Username=kullanici@gmail.com');
     SL.Add('Password=uygulama_sifresi');
@@ -500,11 +505,11 @@ begin
   try
     Ini := TMemIniFile.Create(FIniPath, TEncoding.UTF8);
     try
-      FConfig.Server := Trim(Ini.ReadString('IMAP', 'Server', ''));
-      FConfig.Port := Ini.ReadInteger('IMAP', 'Port', 993);
-      FConfig.SSLMode := EnsureRange(Ini.ReadInteger('IMAP', 'UseSSL', 1), 0, 2);
-      FConfig.Username := Trim(Ini.ReadString('IMAP', 'Username', ''));
-      FConfig.Password := Ini.ReadString('IMAP', 'Password', '');
+      FConfig.Server := Trim(Ini.ReadString('POP3', 'Server', ''));
+      FConfig.Port := Ini.ReadInteger('POP3', 'Port', 995);
+      FConfig.SSLMode := EnsureRange(Ini.ReadInteger('POP3', 'UseSSL', 1), 0, 2);
+      FConfig.Username := Trim(Ini.ReadString('POP3', 'Username', ''));
+      FConfig.Password := Ini.ReadString('POP3', 'Password', '');
       FConfig.SenderAddress := Trim(Ini.ReadString('Filter', 'SenderAddress', ''));
       Parts := Ini.ReadString('Filter', 'Keywords', '').Split([',', ';']);
       SetLength(List, Length(Parts));
@@ -537,11 +542,11 @@ begin
 
   Problems := '';
   if FConfig.Server = '' then
-    Problems := Problems + '- [IMAP] Server boş' + sLineBreak;
+    Problems := Problems + '- [POP3] Server boş' + sLineBreak;
   if (FConfig.Username = '') or SameText(FConfig.Username, 'kullanici@gmail.com') then
-    Problems := Problems + '- [IMAP] Username girilmemiş' + sLineBreak;
+    Problems := Problems + '- [POP3] Username girilmemiş' + sLineBreak;
   if (FConfig.Password = '') or (FConfig.Password = 'uygulama_sifresi') then
-    Problems := Problems + '- [IMAP] Password girilmemiş' + sLineBreak;
+    Problems := Problems + '- [POP3] Password girilmemiş' + sLineBreak;
   if FConfig.SenderAddress = '' then
     Problems := Problems + '- [Filter] SenderAddress boş' + sLineBreak;
   if Length(FConfig.Keywords) = 0 then
