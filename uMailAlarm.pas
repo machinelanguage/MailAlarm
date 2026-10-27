@@ -45,6 +45,8 @@ type
     FFoundCount: Integer;
     function ExtractBody(AMsg: TIdMessage): string;
     function MatchesKeyword(const AText: string): Boolean;
+    function MatchesSender(const AAddress: string): Boolean;
+    function BuildSeenKey(const AUID: string): string;
   protected
     procedure Execute; override;
   public
@@ -237,6 +239,33 @@ begin
       Exit(True);
 end;
 
+function TMailCheckThread.MatchesSender(const AAddress: string): Boolean;
+var
+  Sender, Item: string;
+  Parts: TArray<string>;
+begin
+  Sender := Trim(AAddress);
+  // Boş veya * değeri, tüm gönderenlerden gelen mailleri izler.
+  if (Trim(FConfig.SenderAddress) = '') or (Trim(FConfig.SenderAddress) = '*') then
+    Exit(True);
+  Parts := FConfig.SenderAddress.Split([',', ';']);
+  for Item in Parts do
+    if SameText(Sender, Trim(Item)) then
+      Exit(True);
+  Result := False;
+end;
+
+function TMailCheckThread.BuildSeenKey(const AUID: string): string;
+var
+  KW: string;
+begin
+  // Anahtar kelime veya gönderen filtresi değişirse mevcut mailler yeni
+  // kuralla bir kez yeniden değerlendirilir.
+  Result := AUID + '|from=' + LowerCase(Trim(FConfig.SenderAddress)) + '|kw=';
+  for KW in FConfig.Keywords do
+    Result := Result + '[' + LowerCase(Trim(KW)) + ']';
+end;
+
 function TMailCheckThread.ExtractBody(AMsg: TIdMessage): string;
 var
   I: Integer;
@@ -279,7 +308,7 @@ var
   Msg: TIdMessage;
   UIDLs: TStringList;
   I, MsgNo: Integer;
-  RawUID, UID, Line, BodyText: string;
+  RawUID, UID, SeenKey, Line, BodyText: string;
   Info: TAlarmInfo;
 begin
   FErrorMsg := '';
@@ -332,7 +361,8 @@ begin
 
         // POP3 sıra numarası silinen maillerden sonra değişebilir; UIDL kalıcıdır.
         UID := 'POP3:' + FConfig.Server + ':' + RawUID;
-        if FSeenUIDs.IndexOf(UID) >= 0 then
+        SeenKey := BuildSeenKey(UID);
+        if FSeenUIDs.IndexOf(SeenKey) >= 0 then
           Continue;
 
         Msg.Clear;
@@ -350,9 +380,12 @@ begin
           end;
         end;
 
-        FProcessedUIDs.Add(UID);
-        if not SameText(Trim(Msg.From.Address), Trim(FConfig.SenderAddress)) then
+        FProcessedUIDs.Add(SeenKey);
+        if not MatchesSender(Msg.From.Address) then
+        begin
+          LogMsg('POP3 ileti gönderici filtresi dışında: ' + Msg.From.Address);
           Continue;
+        end;
         Inc(FFoundCount);
         BodyText := ExtractBody(Msg);
         if MatchesKeyword(Msg.Subject) or MatchesKeyword(BodyText) then
@@ -367,7 +400,9 @@ begin
           Info.Body := BodyText;
           FAlarms.Add(Info);
           LogMsg('ALARM: UID=' + UID + ' Konu=' + Msg.Subject);
-        end;
+        end
+        else
+          LogMsg('POP3 ileti anahtar kelime içermiyor: UID=' + UID + ' Konu=' + Msg.Subject);
       end;
     except
       on E: Exception do
@@ -547,8 +582,6 @@ begin
     Problems := Problems + '- [POP3] Username girilmemiş' + sLineBreak;
   if (FConfig.Password = '') or (FConfig.Password = 'uygulama_sifresi') then
     Problems := Problems + '- [POP3] Password girilmemiş' + sLineBreak;
-  if FConfig.SenderAddress = '' then
-    Problems := Problems + '- [Filter] SenderAddress boş' + sLineBreak;
   if Length(FConfig.Keywords) = 0 then
     Problems := Problems + '- [Filter] Keywords boş' + sLineBreak;
   if Problems <> '' then
